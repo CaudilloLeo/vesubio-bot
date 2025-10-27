@@ -31,5 +31,82 @@ module.exports = async (req, res) => {
       if (userText === '/start') {
         userState.paso = 'esperando_correo';
         userStates.set(userId, userState);
-        respuesta = "Escribe tu correo electrónico:";
+        respuesta = "Hola 😊 dame tu correo para conocerte mejor:";
       }
+      else if (userState.paso === 'esperando_correo') {
+        if (isValidEmail(userText)) {
+          userState.correo = userText;
+          userState.paso = 'esperando_opcion';
+          userStates.set(userId, userState);
+          respuesta = "✅ Gracias. Elige una opción:\n\n1. Dime sobre DUA - ¿qué aprenderemos hoy?\n2. Cursos en línea";
+        } else {
+          respuesta = "❌ Correo inválido. Intenta de nuevo:";
+        }
+      }
+      else if (userState.paso === 'esperando_opcion') {
+        if (userText.includes('1')) {
+          userState.paso = 'esperando_pregunta';
+          userStates.set(userId, userState);
+          respuesta = "🌍 Escribe tu pregunta sobre DUA:";
+        } else if (userText.includes('2')) {
+          respuesta = "🎓 Aprende con Declic en línea:\nhttps://declic.mx/\n\n💳 Pagos seguros con Mercado Pago:\nhttps://mpago.li/2qvgknv";
+        } else {
+          respuesta = "Elige:\n1. Dime sobre DUA - ¿qué aprenderemos hoy?\n2. Cursos en línea";
+        }
+      }
+      else if (userState.paso === 'esperando_pregunta') {
+        const resultado = await buscarEnBaseDeDatos(userText);
+        respuesta = resultado;
+        userState.paso = 'esperando_opcion';
+        userStates.set(userId, userState);
+      }
+
+      await enviarTelegram(chatId, respuesta);
+      return res.json({ ok: true });
+    }
+
+  } catch (error) {
+    console.error('Error:', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+};
+
+async function buscarEnBaseDeDatos(pregunta) {
+  try {
+    const response = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'buscar_respuesta',
+        pregunta: pregunta.toLowerCase()
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.encontrado && data.respuesta) {
+      return data.respuesta;
+    } else {
+      return "🤔 No encontré información en la base de datos. Prueba con: variabilidad, DUA, barreras, inclusión";
+    }
+    
+  } catch (error) {
+    return "🔧 Error conectando con la base de datos. Intenta más tarde.";
+  }
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+async function enviarTelegram(chatId, texto) {
+  const params = new URLSearchParams();
+  params.append('chat_id', chatId);
+  params.append('text', texto);
+  
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    method: 'POST',
+    body: params,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+}
