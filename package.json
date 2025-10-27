@@ -7,7 +7,7 @@
     "start": "node api/bot.js"
   },
   "dependencies": {
-    "node-fetch": "^2.6.7"
+    "node-fetch": "^3.3.2"
   },
   "engines": {
     "node": "22.x"
