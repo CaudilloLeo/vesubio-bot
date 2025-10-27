@@ -1,12 +1,19 @@
-const { URLSearchParams } = require('url');
-
-// ✅ TOKEN CORREGIDO - Usando el NUEVO bot
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8496263047:AAG1lPzxj_zUiZqJIYyoyGAJJwcgduQNctA";
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwJ0-7dLJfeNBUOYyBiO-IaOjl_zp6mD1B7R92erfmxbGW06c6Dr0VO5nvFr2Ed8BB8/exec';
+
+// Base de conocimiento de respaldo INMEDIATA
+const BASE_CONOCIMIENTO = {
+  "variabilidad": "🌋 **Variabilidad**: Diferencias naturales en cómo cada cerebro aprende. No es lo mismo que diversidad.",
+  "dua": "🎯 **DUA**: Diseño Universal para el Aprendizaje. 3 principios: Representación, Acción/Expresión, Motivación.",
+  "barreras": "🚧 **Barreras (BAP)**: Obstáculos en el CONTEXTO, no en el estudiante.",
+  "inclusión": "🌈 **Inclusión**: Participación plena de TODOS los estudiantes.",
+  "evaluación": "📊 **Evaluación DUA**: Múltiples formas de demostrar aprendizaje."
+};
 
 const userStates = new Map();
 
 module.exports = async (req, res) => {
+  // Configuración CORS básica
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -14,44 +21,25 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
+    // Endpoint de estado
     if (req.method === 'GET') {
       return res.json({
         status: 'Vesubio Bot activo 🔥',
-        estudiantes_activos: Array.from(userStates.keys()).length,
+        estudiantes: Array.from(userStates.keys()).length,
         timestamp: new Date().toISOString()
       });
     }
 
+    // Webhook de Telegram
     if (req.method === 'POST') {
       const update = req.body;
       
-      // ✅ Manejar callback queries (botones)
-      if (update.callback_query) {
-        const callback = update.callback_query;
-        const chatId = callback.message.chat.id;
-        const userId = callback.from.id;
-        const data = callback.data;
-        
-        let userState = userStates.get(userId) || { 
-          correoRegistrado: false, 
-          opcionElegida: null 
-        };
+      // Debug en producción
+      console.log('📨 UPDATE:', JSON.stringify(update).substring(0, 200));
 
-        if (data === 'opcion_consulta') {
-          userState.opcionElegida = 'consulta';
-          userStates.set(userId, userState);
-          await sendToTelegram(chatId, "🌋 Escribe tu pregunta sobre DUA:");
-        } else if (data === 'opcion_cursos') {
-          await sendToTelegram(chatId, "🎓 Cursos en línea:\n\nhttps://declic.mx/\n\n💳 Pago seguro:\nhttps://mpago.li/2qvgknv");
-        }
-        
-        // Responder a callback
-        await answerCallbackQuery(callback.id);
+      if (!update.message || !update.message.text) {
         return res.json({ ok: true });
       }
-
-      // ✅ Manejar mensajes normales
-      if (!update.message || !update.message.text) return res.json({ ok: true });
 
       const message = update.message;
       const chatId = message.chat.id;
@@ -59,164 +47,122 @@ module.exports = async (req, res) => {
       const userId = message.from.id;
 
       let userState = userStates.get(userId) || { 
-        correoRegistrado: false, 
-        opcionElegida: null,
-        correo: "" 
+        paso: 'inicio',
+        correo: '' 
       };
 
-      let respuesta = "";
+      let respuesta = '';
 
-      // 1. /start → Pedir correo
+      // FLUJO SIMPLIFICADO
       if (userText === '/start') {
-        userState.correoRegistrado = false;
-        userState.opcionElegida = null;
-        userState.correo = "";
+        userState.paso = 'esperando_correo';
         userStates.set(userId, userState);
-        respuesta = "¡Hola! Soy Vesubio 🌋\n\n📧 Por favor escribe tu correo electrónico:";
+        respuesta = "¡Hola! Soy Vesubio 🌋\n\n📧 Escribe tu correo electrónico:";
       }
-      // 2. Esperando correo
-      else if (!userState.correoRegistrado) {
+      else if (userState.paso === 'esperando_correo') {
         if (isValidEmail(userText)) {
           userState.correo = userText;
-          userState.correoRegistrado = true;
+          userState.paso = 'esperando_opcion';
           userStates.set(userId, userState);
-          
-          // ✅ Enviar teclado inline con opciones
-          await sendOptionsKeyboard(chatId, "✅ Correo registrado: " + userText + "\n\nElige una opción:");
-          return res.json({ ok: true });
+          respuesta = `✅ Correo: ${userText}\n\nElige:\n1. 🔍 Buscar en DUA\n2. 🎓 Cursos`;
         } else {
-          respuesta = "❌ Por favor escribe un correo válido:";
+          respuesta = "❌ Correo inválido. Intenta de nuevo:";
         }
       }
-      // 3. Esperando opción (texto como fallback)
-      else if (!userState.opcionElegida) {
-        if (userText.includes('1') || userText.toLowerCase().includes('consulta')) {
-          userState.opcionElegida = 'consulta';
+      else if (userState.paso === 'esperando_opcion') {
+        if (userText.includes('1') || userText.toLowerCase().includes('buscar')) {
+          userState.paso = 'esperando_pregunta';
           userStates.set(userId, userState);
           respuesta = "🌋 Escribe tu pregunta sobre DUA:";
-        } else if (userText.includes('2') || userText.toLowerCase().includes('curso')) {
-          respuesta = "🎓 Cursos en línea:\n\nhttps://declic.mx/\n\n💳 Pago seguro:\nhttps://mpago.li/2qvgknv";
         } else {
-          // Reenviar opciones si no entiende
-          await sendOptionsKeyboard(chatId, "Elige una opción:");
-          return res.json({ ok: true });
+          respuesta = "🎓 Cursos: https://declic.mx/\n\nEscribe /start para buscar en DUA";
         }
       }
-      // 4. Buscar en Google Sheets
-      else if (userState.opcionElegida === 'consulta') {
-        respuesta = "🔍 Buscando en la base de conocimiento...";
-        await sendToTelegram(chatId, respuesta);
-        
-        const resultado = await buscarEnSheets(userText);
+      else if (userState.paso === 'esperando_pregunta') {
+        // BUSCAR RESPUESTA INMEDIATA
+        const resultado = await buscarRespuesta(userText);
         respuesta = resultado;
-        userState.opcionElegida = null;
+        userState.paso = 'esperando_opcion';
         userStates.set(userId, userState);
       }
 
-      if (respuesta) {
-        await sendToTelegram(chatId, respuesta);
-      }
+      // Enviar respuesta
+      await enviarTelegram(chatId, respuesta);
       return res.json({ ok: true });
     }
 
   } catch (error) {
-    console.error('Error:', error);
-    return res.status(500).json({ error: error.message });
+    console.error('❌ ERROR:', error);
+    return res.status(500).json({ error: 'Error interno' });
   }
 };
 
-// ✅ BUSCAR EN GOOGLE SHEETS (mejorado)
-async function buscarEnSheets(pregunta) {
+// BUSCAR RESPUESTA - PRIORIDAD BASE LOCAL
+async function buscarRespuesta(pregunta) {
+  const preguntaLower = pregunta.toLowerCase();
+  
+  console.log(`🔍 Buscando: "${preguntaLower}"`);
+
+  // 1. PRIMERO buscar en base local (instantáneo)
+  for (const [clave, valor] of Object.entries(BASE_CONOCIMIENTO)) {
+    if (preguntaLower.includes(clave)) {
+      console.log(`✅ Encontrado local: ${clave}`);
+      return `${valor}\n\n💡 ¿Otra pregunta? /start`;
+    }
+  }
+
+  // 2. LUEGO intentar con Google Sheets (con timeout)
   try {
-    console.log("Buscando:", pregunta);
+    console.log("🌐 Intentando con Google Sheets...");
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5 seg timeout
     
     const response = await fetch(GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'buscar_respuesta',
-        pregunta: pregunta.toLowerCase()
-      })
+        pregunta: preguntaLower
+      }),
+      signal: controller.signal
     });
     
-    const data = await response.json();
-    console.log("Respuesta GAS:", data);
+    clearTimeout(timeout);
     
-    if (data.encontrado && data.respuesta) {
-      return `📚 **Encontrado:**\n\n${data.respuesta}\n\n¿Tienes otra pregunta? Escribe /start para comenzar de nuevo.`;
-    } else {
-      return "🤔 No encontré información sobre eso. Intenta con palabras como: variabilidad, DUA, barreras, inclusión, evaluación.\n\nEscribe /start para volver al menú.";
+    if (response.ok) {
+      const data = await response.json();
+      console.log("📊 Respuesta GAS:", data);
+      
+      if (data.encontrado && data.respuesta) {
+        return `📚 ${data.respuesta}\n\n💡 ¿Otra pregunta? /start`;
+      }
     }
-    
   } catch (error) {
-    console.error("Error GAS:", error);
-    return "🔧 Error accediendo a la base de conocimiento. Intenta más tarde.\n\nEscribe /start para volver al menú.";
+    console.log("❌ Error GAS:", error.message);
   }
+
+  // 3. FALLBACK final
+  return `🤔 No encontré sobre "${pregunta}"\n\nPrueba con: variabilidad, DUA, barreras, inclusión\n\n💡 Usa /start para nuevo menú`;
 }
 
-// ✅ ENVIAR TECLADO CON OPCIONES
-async function sendOptionsKeyboard(chatId, text) {
-  const keyboard = {
-    inline_keyboard: [
-      [
-        { 
-          text: "🔍 Buscar respuesta DUA", 
-          callback_data: "opcion_consulta" 
-        }
-      ],
-      [
-        { 
-          text: "🎓 Ver cursos en línea", 
-          callback_data: "opcion_cursos" 
-        }
-      ]
-    ]
-  };
-
-  const params = new URLSearchParams();
-  params.append('chat_id', chatId);
-  params.append('text', text);
-  params.append('reply_markup', JSON.stringify(keyboard));
-  
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-    method: 'POST',
-    body: params,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-}
-
-// ✅ RESPONDER A CALLBACK QUERIES
-async function answerCallbackQuery(callbackId) {
-  const params = new URLSearchParams();
-  params.append('callback_query_id', callbackId);
-  
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
-    method: 'POST',
-    body: params,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-}
-
+// FUNCIONES AUXILIARES
 function isValidEmail(email) {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return re.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-async function sendToTelegram(chatId, text) {
+async function enviarTelegram(chatId, texto) {
   try {
     const params = new URLSearchParams();
     params.append('chat_id', chatId);
-    params.append('text', text);
-    params.append('parse_mode', 'Markdown');
+    params.append('text', texto);
     
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       body: params,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-    
-    return await response.json();
   } catch (error) {
-    console.error('Error enviando mensaje:', error);
+    console.error('Error enviando a Telegram:', error);
   }
 }
