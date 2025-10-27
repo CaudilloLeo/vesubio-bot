@@ -1,8 +1,8 @@
 const { URLSearchParams } = require('url');
 
 // Configuración
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8399414595:AAFNfrB6xtdTOYDpfufq_w_Y_T7J4EGPlGw";
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID || "1K8d-W95fDyEhBhariUZeZL21Pq2ZYNzSoXq7ipvz_WQ";
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const API_URL = "https://script.google.com/macros/s/AKfycbwoF_SPaxIfBfhuwQ0dWnf57GxHxgoMJUushxMmJ37DJIVPLyXSwFPRV1kG8J_Xjtm0Ig/exec";
 
 // Base de conocimiento
 const BASE_CONOCIMIENTO = {
@@ -17,7 +17,6 @@ const BASE_CONOCIMIENTO = {
 const userStates = new Map();
 
 module.exports = async (req, res) => {
-  // Configurar CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -27,7 +26,6 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Si es GET, mostrar que el bot está activo
     if (req.method === 'GET') {
       return res.json({
         status: 'Vesubio Bot activo 🔥',
@@ -35,11 +33,9 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Si es POST, procesar webhook de Telegram
     if (req.method === 'POST') {
       const update = req.body;
       
-      // Verificar que sea un mensaje válido
       if (!update.message || !update.message.text) {
         return res.json({ ok: true });
       }
@@ -49,7 +45,6 @@ module.exports = async (req, res) => {
       const userText = message.text.toLowerCase().trim();
       const userId = message.from.id;
 
-      // Obtener estado del usuario
       let userState = userStates.get(userId) || { 
         correoRegistrado: false, 
         opcionElegida: null, 
@@ -64,6 +59,13 @@ module.exports = async (req, res) => {
           userState.correo = userText;
           userState.correoRegistrado = true;
           userStates.set(userId, userState);
+          
+          // REGISTRAR EN SPREADSHEET
+          await callAPI("registrar_estudiante", {
+            correo: userText,
+            telegramId: userId.toString()
+          });
+          
           respuesta = "✅ ¡Gracias! Ahora elige:\n\n[1] 🤔 Hacer consulta educativa\n[2] 🎓 Ver cursos en línea";
         } else if (userText === '/start') {
           respuesta = "¡Hola! Soy Vesubio, tu asistente educativo 🔥\n\n📧 Para comenzar, necesito tu correo electrónico:";
@@ -83,11 +85,17 @@ module.exports = async (req, res) => {
       } else if (userState.opcionElegida === 'consulta') {
         const resultado = buscarRespuesta(userText);
         respuesta = resultado.respuesta;
+        
+        // REGISTRAR ESTADÍSTICAS
+        await callAPI("registrar_estadistica", {
+          tema: resultado.tema,
+          subtema: "consulta"
+        });
+        
         userState.opcionElegida = null;
         userStates.set(userId, userState);
       }
 
-      // Enviar respuesta a Telegram
       await sendToTelegram(chatId, respuesta);
       return res.json({ ok: true });
     }
@@ -141,5 +149,28 @@ async function sendToTelegram(chatId, text) {
   } catch (error) {
     console.error('Error enviando a Telegram:', error);
     throw error;
+  }
+}
+
+// Llamar al API de Google Apps Script
+async function callAPI(action, data) {
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: action,
+        ...data
+      }),
+    });
+    
+    const result = await response.json();
+    console.log(`✅ API ${action}:`, result);
+    return result;
+  } catch (error) {
+    console.error(`❌ Error en API ${action}:`, error);
+    return { success: false, error: error.message };
   }
 }
