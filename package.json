@@ -1,0 +1,15 @@
+{
+  "name": "vesubio-bot",
+  "version": "1.0.0",
+  "description": "Asistente educativo DUA",
+  "main": "api/bot.js",
+  "scripts": {
+    "start": "node api/bot.js"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
